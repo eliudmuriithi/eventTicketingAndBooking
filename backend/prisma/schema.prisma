@@ -1,0 +1,163 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement()) // Primary key, auto-incremented integer
+  name      String                                   // User's full name
+  email     String   @unique                         // User's email address (must be unique)
+  password  String                                   // Hashed user password
+  role      String   @default("Attendee")            // User role with default value "Attendee" (e.g., Admin, Attendee)
+  booking   Booking[]                                // One-to-many relation: one user can have multiple bookings
+  events    Event[]  @relation("OrganizedEvents")    // One-to-many relation: user organizes multiple events (uses a named relation)
+  payments  Payment[]                                // One-to-many relation: one user can make multiple payments
+  supportTickets SupportTicket[]                     // One-to-many relation: user can raise multiple support tickets
+  createdAt DateTime @default(now())                 // Timestamp of when the user was created (default to current time)
+  updatedAt DateTime @updatedAt                      // Timestamp of the last update (auto-updated by Prisma)
+}
+
+
+model Venue {
+  id        Int      @id @default(autoincrement()) // Primary key, auto-incremented integer
+  name      String                                 // Name of the venue
+  address   String                                 // Physical address of the venue
+  capacity  Int                                    // Maximum number of people the venue can hold
+  events    Event[]                                // One-to-many relation: one venue can host multiple events
+  createdAt DateTime @default(now())               // Timestamp of venue creation (defaults to current time)
+}
+
+
+model Category {
+  id          Int     @id @default(autoincrement()) // Primary key for the category
+  name        String                               // Name of the category (e.g., Music, Tech)
+  description String                               // Description of what this category represents
+  events      Event[]                              // One-to-many relation: a category can have many events
+}
+
+
+model Event {
+  id            Int       @id @default(autoincrement())         // Primary key for the event
+  title         String                                        // Title of the event
+  description   String                                        // Description/details about the event
+  date          DateTime                                      // Date when the event will take place
+  time          String                                        // Time of the event (stored as string, consider using DateTime if you want more precision)
+  ticketPrice   Float                                         // Price per ticket
+  totalTickets  Int                                           // Total number of tickets available
+  soldTickets   Int                                           // Number of tickets already sold
+
+  organizerId   Int                                           // Foreign key referencing the User (organizer)
+  venueId       Int                                           // Foreign key referencing the Venue
+  categoryId    Int                                           // Foreign key referencing the Category
+
+  organizer     User      @relation("OrganizedEvents", fields: [organizerId], references: [id]) 
+  // Many-to-one: An event is organized by one user (organizer)
+
+  venue         Venue     @relation(fields: [venueId], references: [id]) 
+  // Many-to-one: An event is held at one venue
+
+  category      Category  @relation(fields: [categoryId], references: [id]) 
+  // Many-to-one: An event belongs to one category
+
+  bookings      Booking[]                                     
+  // One-to-many: An event can have multiple bookings
+
+  createdAt     DateTime  @default(now())                     
+  // Timestamp of when the event was created
+}
+
+
+
+model Booking {
+  id          Int           @id @default(autoincrement())     // Primary key for each booking
+  userId      Int                                              // FK to User
+  eventId     Int                                              // FK to Event
+  status      BookingStatus @default(Pending)                 // Enum to track booking status (e.g., Pending, Confirmed)
+  bookingDate DateTime      @default(now())                   // Timestamp of booking creation
+  totalAmount Float                                           // Total price for all tickets in this booking
+
+  tickets     Ticket[]                                        // One-to-many: Booking can have many tickets
+
+  payment     Payment?     @relation("BookingPayment")        // One-to-one: Optional payment associated with this booking
+  paymentId   Int?                                            // FK to Payment
+
+  user        User         @relation(fields: [userId], references: [id])  // Many-to-one: Booking belongs to a user
+  event       Event        @relation(fields: [eventId], references: [id]) // Many-to-one: Booking belongs to an event
+}
+
+model Ticket {
+  id         Int      @id @default(autoincrement())          // Primary key for each ticket
+  bookingId  Int                                             // FK to Booking
+  ticketCode String   @unique                               // Unique code (e.g., QR or alphanumeric code)
+  seatNumber String?                                        // Optional seat assignment
+  issuedAt   DateTime @default(now())                       // Timestamp of ticket issuance
+
+  booking    Booking  @relation(fields: [bookingId], references: [id]) // Many-to-one: Ticket belongs to one booking
+}
+
+
+model Payment {
+  id             Int            @id @default(autoincrement())     // Primary key
+  userId         Int                                                // FK to User
+  bookingId      Int  @unique                                       // FK to Booking (must be unique for one-to-one)
+  paymentMethod  PaymentMethod                                      // Enum (e.g., CreditCard, M-Pesa)
+  status         PaymentStatus  @default(Success)                   // Enum (e.g., Pending, Success, Failed)
+  amount         Float                                              // Amount paid
+  transactionId  String         @unique                             // Unique transaction reference
+  paidAt         DateTime       @default(now())                     // Timestamp of payment
+
+  user           User           @relation(fields: [userId], references: [id]) // Many-to-one: Payment by a user
+  booking        Booking        @relation("BookingPayment", fields: [bookingId], references: [id]) 
+  // One-to-one: Payment belongs to one booking (same relation name as in `Booking`)
+}
+
+
+model SupportTicket {
+  id        Int          @id @default(autoincrement())       // Primary key
+  userId    Int                                             // FK to User
+  subject   String                                          // Ticket subject/title
+  message   String                                          // Detailed message/content
+  status    TicketStatus @default(Open)                     // Enum: e.g., Open, Closed, Pending
+  createdAt DateTime     @default(now())                    // Timestamp of ticket creation
+
+  user      User         @relation(fields: [userId], references: [id]) // Many-to-one: belongs to one user
+}
+
+
+enum Role {
+  Admin
+  Organizer
+  Attendee
+}
+
+enum BookingStatus {
+  Pending
+  Confirmed
+  Cancelled
+}
+
+enum PaymentMethod {
+ M_Pesa
+ Paypal
+}
+
+enum PaymentStatus {
+  Success
+  Failed
+}
+
+enum TicketStatus {
+  Open
+  In_Progress
+  Clesed
+}
